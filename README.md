@@ -1,2 +1,2 @@
 # biofiles
-Go library for dealing with common bioinformatics file types.
+Libraries (in various languages) for dealing with common bioinformatics file types.
