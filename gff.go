@@ -113,13 +113,19 @@ func parseAttributes(s string) map[string]string {
 	}
 	fields := strings.Split(s, ";")
 	for _, val := range fields {
-		matches := attributeRe.FindStringSubmatch(val)
-		if matches != nil {
-			// matches[0] is the entire match
-			// matches[1]... are the submatches
-			unescaped, _ := url.QueryUnescape(matches[2])
-			attribDict[matches[1]] = unescaped
+		attribval := strings.SplitN(val, "=", 2)
+		if len(attribval) < 2 {
+			continue
 		}
+		unescaped, _ := url.QueryUnescape(attribval[1])
+		attribDict[attribval[0]] = unescaped
+		// matches := attributeRe.FindStringSubmatch(val)
+		// if matches != nil {
+		// 	// matches[0] is the entire match
+		// 	// matches[1]... are the submatches
+		// 	unescaped, _ := url.QueryUnescape(matches[2])
+		// 	attribDict[matches[1]] = unescaped
+		// }
 	}
 	return attribDict
 }
@@ -141,10 +147,10 @@ func populateChildren(recs []GFFRecord) {
 
 // ParseGFF parses GFF records, returning a slice of
 // GFFRecord and a string (possibly empty) with associated Fasta file
-func ParseGFF(r io.Reader) ([]GFFRecord, string) {
+func ParseGFF(r io.Reader) ([]GFFRecord, []FastaRecord) {
 	var records []GFFRecord
 	var isFasta bool
-	var fastaStrs []string
+	var fastaStr strings.Builder
 
 	input := bufio.NewScanner(r)
 	for input.Scan() {
@@ -161,7 +167,8 @@ func ParseGFF(r io.Reader) ([]GFFRecord, string) {
 		}
 		// Process FASTA
 		if isFasta {
-			fastaStrs = append(fastaStrs, line)
+			fastaStr.WriteString(line)
+			fastaStr.WriteByte('\n')
 			continue
 		}
 		// If not FASTA, process GFFRecord
@@ -171,5 +178,10 @@ func ParseGFF(r io.Reader) ([]GFFRecord, string) {
 		}
 	}
 	populateChildren(records)
-	return records, strings.Join(fastaStrs, "\n")
+
+	var fastaRecs []FastaRecord
+	if fastaStr.Len() > 0 {
+		fastaRecs = ParseFasta(strings.NewReader(fastaStr.String()))
+	}
+	return records, fastaRecs
 }
