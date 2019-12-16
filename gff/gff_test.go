@@ -1,4 +1,4 @@
-package biofiles
+package gff
 
 import (
 	"fmt"

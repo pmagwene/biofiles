@@ -1,4 +1,4 @@
-package biofiles
+package fasta
 
 import (
 	"fmt"
