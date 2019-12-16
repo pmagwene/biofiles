@@ -114,8 +114,8 @@ All attributes that begin with an uppercase letter are reserved for later use. A
 
 */
 
-// GFFRecord represents the information in a GFF3 record
-type GFFRecord struct {
+// Record represents the information in a GFF3 record
+type Record struct {
 
 	// The nine standard GFF fields
 	SeqID      string
@@ -145,22 +145,22 @@ type GFFRecord struct {
 	Sequence      string
 	IsGene        bool
 	ScoreExists   bool
-	Children      []*GFFRecord
-	Cds           []*GFFRecord
-	Parts         []*GFFRecord
-	Exons         []*GFFRecord
-	Introns       []*GFFRecord
+	Children      []*Record
+	Cds           []*Record
+	Parts         []*Record
+	Exons         []*Record
+	Introns       []*Record
 }
 
-func (r *GFFRecord) String() string {
-	return fmt.Sprintf("(%s, %s, %s, %d, %d, %s )",
+func (r *Record) String() string {
+	return fmt.Sprintf("(%s, %s, %s, %d, %d, %s)",
 		r.ID, r.Type, r.SeqID, r.Start, r.End, r.Strand)
 }
 
-// ParseGFFRecord turns a string into a single GFF record
-func ParseGFFRecord(s string) (*GFFRecord, error) {
+// ParseRecord turns a string into a single GFF record
+func ParseRecord(s string) (*Record, error) {
 
-	var r GFFRecord
+	var r Record
 
 	parts := strings.Split(strings.TrimSpace(s), "\t")
 	if len(parts) != 9 {
@@ -227,7 +227,7 @@ func parseAttributes(s string) map[string]string {
 	return attribDict
 }
 
-func buildAttributeStr(rec *GFFRecord) string {
+func buildAttributeStr(rec *Record) string {
 	var fmtstr string
 	var attribstr strings.Builder
 	stdattribs := [...]string{"ID", "Name", "Parent", "Target",
@@ -267,9 +267,9 @@ func buildAttributeStr(rec *GFFRecord) string {
 	return attribstr.String()
 }
 
-// Populate the Children field of a slice of GFFRecord structs
-func populateChildren(recs []*GFFRecord) {
-	var tbl = make(map[string]*GFFRecord)
+// Populate the Children field of a slice of Record structs
+func populateChildren(recs []*Record) {
+	var tbl = make(map[string]*Record)
 	for i, rec := range recs {
 		tbl[rec.ID] = recs[i]
 	}
@@ -282,10 +282,10 @@ func populateChildren(recs []*GFFRecord) {
 	}
 }
 
-// ParseGFF parses GFF records, returning a slice of
-// *GFFRecord and a slice(possibly empty) with associated fasta.Records
-func ParseGFF(r io.Reader) ([]*GFFRecord, []*fasta.Record) {
-	var records []*GFFRecord
+// ParseAll parses GFF records, returning a slice of
+// *Record and a slice(possibly empty) with associated fasta.Records
+func ParseAll(r io.Reader) ([]*Record, []*fasta.Record) {
+	var records []*Record
 	var isFasta bool
 	var fastastr strings.Builder
 
@@ -309,8 +309,8 @@ func ParseGFF(r io.Reader) ([]*GFFRecord, []*fasta.Record) {
 			fastastr.WriteByte('\n')
 			continue
 		}
-		// If not FASTA, process GFFRecord
-		rec, err := ParseGFFRecord(line)
+		// If not FASTA, process Record
+		rec, err := ParseRecord(line)
 		if err == nil {
 			records = append(records, rec)
 		}
@@ -319,37 +319,45 @@ func ParseGFF(r io.Reader) ([]*GFFRecord, []*fasta.Record) {
 
 	var fastarecs []*fasta.Record
 	if fastastr.Len() > 0 {
-		fastarecs = fasta.Parse(strings.NewReader(fastastr.String()))
+		fastarecs = fasta.ParseAll(strings.NewReader(fastastr.String()))
 	}
 	return records, fastarecs
 }
 
-// WriteGFF writes string representation of GFF records, and
-// optional associated Fasta records, to given Writer interface
-func WriteGFF(recs []*GFFRecord, fastarecs []*fasta.Record, w io.Writer) {
+// WriteRecord writes a single GFF record to the given Writer
+func WriteRecord(r *Record, w io.Writer) {
 	var b bytes.Buffer
-	for _, rec := range recs {
-		scorestr := "."
-		if rec.ScoreExists {
-			scorestr = fmt.Sprintf("%f", rec.Score)
-		}
-		attribstr := buildAttributeStr(rec)
-		fmtstr := "%s\t%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n"
-		recstr := fmt.Sprintf(fmtstr,
-			rec.SeqID, rec.Source, rec.Type, rec.Start, rec.End,
-			scorestr, rec.Strand, rec.Phase, attribstr)
-		b.WriteString(recstr)
+	scorestr := "."
+	if r.ScoreExists {
+		scorestr = fmt.Sprintf("%f", r.Score)
 	}
-	w.Write(b.Bytes())
-	if len(fastarecs) > 0 {
-		fasta.Write(fastarecs, w)
+	attribstr := buildAttributeStr(r)
+	fmtstr := "%s\t%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n"
+	recstr := fmt.Sprintf(fmtstr,
+		r.SeqID, r.Source, r.Type, r.Start, r.End,
+		scorestr, r.Strand, r.Phase, attribstr)
+	b.WriteString(recstr)
+}
+
+// WriteAll writes string representations of GFF records, and
+// optional associated Fasta records, to given Writer interface
+func WriteAll(recs []*Record, w io.Writer) {
+	for _, rec := range recs {
+		WriteRecord(rec, w)
 	}
 }
 
-// MakeFastaRecord generates a fasta.Record that corresponds to the given
-// GFFRecord. lwindow and rwindow parameters facilitate specification of a
+// WriteFastaSection appends an optional Fasta section to a GFF file.
+// WriteFastaSection should be called after gff.Write or gff.WriteAll
+func WriteFastaSection(fastarecs []*fasta.Record, w io.Writer) {
+	w.Write([]byte("##FASTA\n"))
+	fasta.WriteAll(fastarecs, w)
+}
+
+// ToFastaRecord generates a fasta.Record that corresponds to the given
+// GFF Record. lwindow and rwindow parameters facilitate specification of a
 // sequence window around the feature.
-func (r GFFRecord) MakeFastaRecord(fastadict map[string]*fasta.Record,
+func (r Record) ToFastaRecord(fastadict map[string]*fasta.Record,
 	lwindow int, rwindow int) *fasta.Record {
 	target := fastadict[r.SeqID]
 	wstart := r.Start - 1 - lwindow
