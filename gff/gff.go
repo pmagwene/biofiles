@@ -126,7 +126,7 @@ type Record struct {
 	Score      float64
 	Strand     string
 	Phase      string
-	Attributes string
+	Attributes map[string]string
 
 	// the ten standard reserved attributes
 	ID           string
@@ -141,15 +141,14 @@ type Record struct {
 	OntologyTerm string
 
 	// some attributes I've added for convenience
-	AttributeDict map[string]string
-	Sequence      string
-	IsGene        bool
-	ScoreExists   bool
-	Children      []*Record
-	Cds           []*Record
-	Parts         []*Record
-	Exons         []*Record
-	Introns       []*Record
+	Sequence    string
+	IsGene      bool
+	ScoreExists bool
+	Children    []*Record
+	Cds         []*Record
+	Parts       []*Record
+	Exons       []*Record
+	Introns     []*Record
 }
 
 func (r *Record) String() string {
@@ -184,23 +183,22 @@ func ParseRecord(s string) (*Record, error) {
 	}
 	r.Strand = parts[6]
 	r.Phase = parts[7]
-	r.Attributes = parts[8]
 
 	if r.Type == "gene" {
 		r.IsGene = true
 	}
 
 	// parse attributes field, setting standard attribute
-	r.AttributeDict = parseAttributes(parts[8])
-	r.ID = r.AttributeDict["ID"]
-	r.Name = r.AttributeDict["Name"]
-	r.Parent = r.AttributeDict["Parent"]
-	r.Target = r.AttributeDict["Target"]
-	r.Gap = r.AttributeDict["Gap"]
-	r.DerivesFrom = r.AttributeDict["Derives_from"]
-	r.Note = r.AttributeDict["Note"]
-	r.Dbxref = r.AttributeDict["Dbxref"]
-	r.OntologyTerm = r.AttributeDict["Ontology_term"]
+	r.Attributes = parseAttributes(parts[8])
+	r.ID = r.Attributes["ID"]
+	r.Name = r.Attributes["Name"]
+	r.Parent = r.Attributes["Parent"]
+	r.Target = r.Attributes["Target"]
+	r.Gap = r.Attributes["Gap"]
+	r.DerivesFrom = r.Attributes["Derives_from"]
+	r.Note = r.Attributes["Note"]
+	r.Dbxref = r.Attributes["Dbxref"]
+	r.OntologyTerm = r.Attributes["Ontology_term"]
 
 	return &r, nil
 
@@ -235,7 +233,7 @@ func buildAttributeStr(rec *Record) string {
 
 	// Deal with standard attributes in given order
 	for _, attrib := range stdattribs {
-		val := rec.AttributeDict[attrib]
+		val := rec.Attributes[attrib]
 		if len(val) < 1 {
 			continue
 		}
@@ -249,7 +247,7 @@ func buildAttributeStr(rec *Record) string {
 
 	}
 	// Deal with other attributes
-	for attrib, val := range rec.AttributeDict {
+	for attrib, val := range rec.Attributes {
 		switch attrib {
 		case "ID", "Name", "Parent", "Target", "Gap",
 			"Derives_from", "Note", "Dbxref", "Ontology_term":
