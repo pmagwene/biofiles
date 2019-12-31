@@ -29,161 +29,110 @@ func NewTable() Table {
 
 // Metadata represents data for a VCF metafield
 type Metadata struct {
-	class       string
+	Class       string
+	Value       string
 	ID          string
 	Description string
 	Number      string
-	Type        MetadataType
+	Type        DatatypeType
 	Source      string
 	Version     string
-	Other       map[string]string
-	Value       string
-	isKeyValue  bool
+	OtherFields map[string]string
+}
+
+func (m Metadata) String() string {
+	s := ""
+	if m.ID == "" {
+		s = fmt.Sprintf("(%s, %s)", m.Class, m.Value)
+	} else {
+		s = fmt.Sprintf("(%s, %s, %s, %s, %s)",
+			m.Class, m.ID, m.Description, m.Number, m.Type)
+	}
+	return s
 }
 
 // NewMetadata is a constructor for the metafield struct
 func NewMetadata() Metadata {
 	var result Metadata
-	result.Other = make(map[string]string)
+	result.OtherFields = make(map[string]string)
 	return result
 }
 
-// MetadataType represents the data types associated with different
-// VCF metainformation
-type MetadataType int
-
-// enum for MetaDataType
-const (
-	None MetadataType = iota
-	Integer
-	Float
-	String
-	Character
-	Flag
-	NumMetadataTypes
-)
-
-func (i MetadataType) String() string {
-	return [...]string{"None", "Integer", "Float", "String", "Character", "Flag"}[i]
-}
-
-func parseMetadataType(s string) (MetadataType, error) {
-	switch s {
-	case "Integer":
-		return Integer, nil
-	case "Float":
-		return Float, nil
-	case "String":
-		return String, nil
-	case "Character":
-		return Character, nil
-	case "Flag":
-		return Flag, nil
-	default:
-		return None, fmt.Errorf("invalid INFO type")
+// ParseMetadata parses a string to a metadata struct
+func ParseMetadata(s string) (Metadata, error) {
+	result := NewMetadata()
+	if !strings.HasPrefix(s, "##") {
+		return result, fmt.Errorf("invalid metadata line; must start with ##")
 	}
-}
+	classval := strings.SplitN(s, "=", 2)
+	if len(classval) != 2 {
+		return result, fmt.Errorf("invalid metadata line; no ##field=value")
+	}
 
-// Record is a representation of a VCF record
-type Record struct {
-	// The 8 required fields
-	Chrom     string
-	Pos       int
-	ID        string
-	Ref       string
-	Alt       string
-	Qual      float64
-	Filter    string
-	Info      *InfoData
-	Genotypes *GenotypeData
-	HasQual   bool
-}
+	result.Class = classval[0][2:]
+	result.Value = classval[1]
+	val := classval[1]
 
-// InfoData is a struct that represents the INFO field in a VCF record
-type InfoData struct {
-	Integers   map[string][]int64
-	Floats     map[string][]float64
-	Strings    map[string][]string
-	Characters map[string][]byte
-	Flags      map[string]bool
-}
+	if !strings.HasPrefix(val, "<") || !strings.HasSuffix(val, ">") {
+		return result, nil
+	}
 
-// NewInfoData is a constructor for an InfoData struct
-func NewInfoData() InfoData {
-	var result InfoData
-	result.Integers = make(map[string][]int64)
-	result.Floats = make(map[string][]float64)
-	result.Strings = make(map[string][]string)
-	result.Characters = make(map[string][]byte)
-	result.Flags = make(map[string]bool)
-	return result
-}
+	fieldstr := strings.Trim(classval[1], "<>")
+	matches := keyvalRe.FindAllStringSubmatch(fieldstr, -1)
+	if len(matches) < 3 {
+		return result, fmt.Errorf("No key=value pairs found in: <%s>", s)
+	}
 
-var convArray = [...]{
-
-}
-
-func parseInfoData(
-	infomap map[string]*Metadata, s string) (InfoData, error) {
-
-	result := NewInfoData()
-	var key, value string
-
-	for _, field := range strings.Split(strings.TrimSpace(s), ";") {
-		if strings.Contains(field, "=") {
-			key, value = splitKeyEqualValueString(field)
-		} else {
-			key = field
-		}
-		if _, ok := infomap[key]; ok {
-			datatype, err := parseMetadataType(key)
-			if err != nil {
-				continue
-			}
-			switch datatype {
-			case None:
-				panic("Invalid metadata type")
-			case Integer:
-				value, err := strconv.ParseInt(value, 10, 64)
-				if err != nil {
-					continue
+	for _, match := range matches {
+		// note that match[0] is the entire match
+		// while match[1] and match[2] are the desired subgroups
+		key := match[1]
+		value := match[2]
+		switch key {
+		case "ID":
+			result.ID = value
+		case "Description":
+			result.Description = value
+		case "Number":
+			result.Number = value
+		case "Source":
+			result.Source = value
+		case "Version":
+			result.Version = value
+		case "Type":
+			switch value {
+			case "Integer":
+				if result.Number == "1" {
+					result.Type = IntegerType
+				} else {
+					result.Type = IntegerVectorType
 				}
-				result.Integers[key] = append(result.Integers[key], value)
-			case Float:
-				value, err := strconv.ParseFloat(value, 64)
-				if err != nil {
-					continue
+			case "Float":
+				if result.Number == "1" {
+					result.Type = FloatType
+				} else {
+					result.Type = FloatVectorType
 				}
-				result.Floats[key] = append(result.Floats[key], value)
-			case String:
-				result.Strings[key] = append(result.Strings[key], value)
-			case Character:
-				result.Characters[key] = append(result.Characters[key], byte(value[0]))
-			case Flag:
-				result.Flags[key] = true
+			case "String":
+				if result.Number == "1" {
+					result.Type = StringType
+				} else {
+					result.Type = StringVectorType
+				}
+			case "Character":
+				if result.Number == "1" {
+					result.Type = CharacterType
+				} else {
+					result.Type = CharacterVectorType
+				}
+			case "Flag":
+				result.Type = FlagType
 			}
-		} else {
-			result.Strings[key] = append(result.Strings[key], value)
+		default:
+			result.OtherFields[key] = value
 		}
 	}
 	return result, nil
-}
-
-// GenotypeData represents the genotype information in the genotype
-// field of a VCF record
-type GenotypeData struct {
-	Format  string
-	Samples []string
-}
-
-func parseGenotypeFields(fields []string) *GenotypeData {
-	if fields == nil {
-		return nil
-	}
-	gd := new(GenotypeData)
-	gd.Format = fields[0]
-	gd.Samples = fields[1:]
-	return gd
 }
 
 var keyvalRe = regexp.MustCompile(`(?P<key>\w+)=(?P<value>["].+?["]|[^,]+?)(?:$|,)`)
@@ -196,44 +145,126 @@ func splitKeyEqualValueString(s string) (string, string) {
 	return matches[1], matches[2]
 }
 
-func parseMetadata(s string) (Metadata, error) {
-	result := NewMetadata()
-	result.Value = s
-	if !strings.HasPrefix(s, "<") || !strings.HasSuffix(s, ">") {
-		result.isKeyValue = false
-		return result, nil
-	}
-	s = strings.Trim(s, "<>")
+// Record is a representation of a VCF record
+type Record struct {
+	// The 8 required fields
+	Chrom     string
+	Pos       int
+	ID        string
+	Ref       string
+	Alt       string
+	Qual      float64
+	Filter    string
+	Info      map[string]Datatype
+	Format    []string
+	Genotypes [][]Datatype
+	HasQual   bool
+	Parent    *Table
+}
 
-	matches := keyvalRe.FindAllStringSubmatch(s, -1)
-	if len(matches) < 1 {
-		return result, fmt.Errorf("No key=value pairs found in: <%s>", s)
+// NewRecord constructs a vcf.Record
+func NewRecord(parent *Table) Record {
+	var result Record
+	result.Parent = parent
+	result.Info = make(map[string]Datatype)
+	return result
+}
+
+// ParseRecord parses a string to a vcf.Record struct
+func (r *Record) ParseRecord(s string) error {
+	parts := strings.Split(s, "\t")
+	if len(parts) < 8 {
+		return fmt.Errorf("invalid VCF line")
 	}
 
-	for _, match := range matches {
-		// note that match[0] is the entire match
-		// while match[1] and match[2] are the desired groups
-		key := match[1]
-		value := match[2]
-		switch key {
-		case "ID":
-			result.ID = value
-		case "Description":
-			result.ID = value
-		case "Number":
-			result.Number = value
-		case "Type":
-			dtype, _ := parseMetadataType(value)
-			result.Type = dtype
-		case "Source":
-			result.Source = value
-		case "Version":
-			result.Version = value
-		default:
-			result.Other[key] = value
+	r.Chrom = parts[0]
+	pos, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid parsing of Pos")
+	}
+	r.Pos = int(pos)
+	r.ID = parts[2]
+	r.Ref = parts[3]
+	r.Alt = parts[4]
+	qual, err := strconv.ParseFloat(parts[5], 64)
+	if err == nil {
+		r.Qual = qual
+		r.HasQual = true
+	}
+	r.Filter = parts[6]
+	err = r.parseInfo(parts[7])
+	if err != nil {
+		return err
+	}
+
+	if len(parts) > 8 {
+		r.Format = strings.Split(parts[8], ":")
+	}
+
+	if len(parts) > 9 {
+		err = r.parseGenotypes(parts[9:])
+		if err != nil {
+			return err
 		}
 	}
-	return result, nil
+
+	return err
+}
+
+func (r *Record) parseInfo(s string) error {
+
+	var datatype Datatype
+	var err error
+
+	if len(s) < 1 {
+		return fmt.Errorf("empty info string")
+	}
+
+	for _, field := range strings.Split(strings.TrimSpace(s), ";") {
+		if !strings.Contains(field, "=") { // Flag field
+			f := Flag(true)
+			r.Info[field] = f
+			continue
+		}
+		idval := strings.SplitN(field, "=", 2)
+		id := idval[0]
+		val := idval[1]
+
+		if metadata, ok := r.Parent.Info[id]; ok {
+			datatype, err = ParseDatatype(metadata.Type, val)
+		} else {
+			datatype, err = ParseString(val)
+		}
+		if err != nil {
+			return fmt.Errorf("error parsing Info field: %s", id)
+		}
+		r.Info[id] = datatype
+	}
+	return nil
+}
+
+func (r *Record) parseGenotypes(fields []string) error {
+	var key string
+	var typetype DatatypeType
+	var datatype Datatype
+	var err error
+
+	for _, field := range fields {
+		var sample []Datatype
+		parts := strings.Split(field, ":")
+		for i, part := range parts {
+			if part == "." {
+				datatype, err = ParseString(part)
+			} else {
+				key = r.Format[i]
+				typetype = r.Parent.Format[key].Type
+				datatype, err = ParseDatatype(typetype, part)
+			}
+			sample = append(sample, datatype)
+		}
+		r.Genotypes = append(r.Genotypes, sample)
+	}
+	return err
 }
 
 // ParseFile parses a VCF file, returning a vcf.Table struct
@@ -255,15 +286,14 @@ func ParseFile(r io.Reader) (Table, error) {
 			}
 			// metainformation
 			if strings.HasPrefix(line, "##") {
-				key, value := splitKeyEqualValueString(line)
-				key = key[2:]
-				meta, err := parseMetadata(value)
+				meta, err := ParseMetadata(line)
 				if err != nil {
 					return table, err
 				}
-				switch key {
+				table.Metadata = append(table.Metadata, &meta)
+				switch meta.Class {
 				case "fileformat":
-					table.Fileformat = value
+					table.Fileformat = meta.Value
 				case "INFO":
 					if meta.ID != "" {
 						table.Info[meta.ID] = &meta
@@ -272,41 +302,13 @@ func ParseFile(r io.Reader) (Table, error) {
 					if meta.ID != "" {
 						table.Format[meta.ID] = &meta
 					}
-				default:
-					table.Metadata =
-						append(table.Metadata, &meta)
 				}
 				continue
 			}
 		}
-		// line with fields
-		parts := strings.Split(line, "\t")
-		if len(parts) < 8 {
-			return table, fmt.Errorf("invalid VCF line")
-		}
-		r := new(Record)
-		r.Chrom = parts[0]
-		pos, err := strconv.ParseInt(parts[1], 0, 64)
-		if err == nil {
-			r.Pos = int(pos)
-		}
-		r.ID = parts[2]
-		r.Ref = parts[3]
-		r.Alt = parts[4]
-		qual, err := strconv.ParseFloat(parts[5], 64)
-		if err == nil {
-			r.Qual = qual
-			r.HasQual = true
-		}
-		r.Filter = parts[6]
-		info, err := parseInfoData(table.Info, parts[7])
-		if err == nil {
-			r.Info = &info
-		}
-		if len(parts) >= 9 {
-			r.Genotypes = parseGenotypeFields(parts[8:])
-		}
-		records = append(records, r)
+		r := NewRecord(&table)
+		r.ParseRecord(line)
+		records = append(records, &r)
 	}
 	table.Records = records
 	return table, nil
