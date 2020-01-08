@@ -20,11 +20,11 @@ type Table struct {
 }
 
 // NewTable initializes a vcf.Table struct
-func NewTable() Table {
+func NewTable() *Table {
 	var tbl Table
 	tbl.Info = make(map[string]*Metadata)
 	tbl.Format = make(map[string]*Metadata)
-	return tbl
+	return &tbl
 }
 
 // Metadata represents data for a VCF metafield
@@ -40,7 +40,7 @@ type Metadata struct {
 	OtherFields map[string]string
 }
 
-func (m Metadata) String() string {
+func (m *Metadata) String() string {
 	s := ""
 	if m.ID == "" {
 		s = fmt.Sprintf("(%s, %s)", m.Class, m.Value)
@@ -52,14 +52,14 @@ func (m Metadata) String() string {
 }
 
 // NewMetadata is a constructor for the metafield struct
-func NewMetadata() Metadata {
+func NewMetadata() *Metadata {
 	var result Metadata
 	result.OtherFields = make(map[string]string)
-	return result
+	return &result
 }
 
 // ParseMetadata parses a string to a metadata struct
-func ParseMetadata(s string) (Metadata, error) {
+func ParseMetadata(s string) (*Metadata, error) {
 	result := NewMetadata()
 	if !strings.HasPrefix(s, "##") {
 		return result, fmt.Errorf("invalid metadata line; must start with ##")
@@ -79,9 +79,9 @@ func ParseMetadata(s string) (Metadata, error) {
 
 	fieldstr := strings.Trim(classval[1], "<>")
 	matches := keyvalRe.FindAllStringSubmatch(fieldstr, -1)
-	if len(matches) < 3 {
-		return result, fmt.Errorf("No key=value pairs found in: <%s>", s)
-	}
+	// if len(matches) < 3 {
+	// 	return result, fmt.Errorf("No key=value pairs found in: %s, %v", fieldstr, matches)
+	// }
 
 	for _, match := range matches {
 		// note that match[0] is the entire match
@@ -163,11 +163,11 @@ type Record struct {
 }
 
 // NewRecord constructs a vcf.Record
-func NewRecord(parent *Table) Record {
+func NewRecord(parent *Table) *Record {
 	var result Record
 	result.Parent = parent
 	result.Info = make(map[string]Datatype)
-	return result
+	return &result
 }
 
 // ParseRecord parses a string to a vcf.Record struct
@@ -176,7 +176,6 @@ func (r *Record) ParseRecord(s string) error {
 	if len(parts) < 8 {
 		return fmt.Errorf("invalid VCF line")
 	}
-
 	r.Chrom = parts[0]
 	pos, err := strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
@@ -192,22 +191,22 @@ func (r *Record) ParseRecord(s string) error {
 		r.HasQual = true
 	}
 	r.Filter = parts[6]
+	// INFO field
 	err = r.parseInfo(parts[7])
 	if err != nil {
 		return err
 	}
-
+	// FORMAT field
 	if len(parts) > 8 {
 		r.Format = strings.Split(parts[8], ":")
 	}
-
+	// Sample genotypes
 	if len(parts) > 9 {
 		err = r.parseGenotypes(parts[9:])
 		if err != nil {
 			return err
 		}
 	}
-
 	return err
 }
 
@@ -268,7 +267,7 @@ func (r *Record) parseGenotypes(fields []string) error {
 }
 
 // ParseFile parses a VCF file, returning a vcf.Table struct
-func ParseFile(r io.Reader) (Table, error) {
+func ParseFile(r io.Reader) (*Table, error) {
 	var records []*Record
 	table := NewTable()
 
@@ -290,25 +289,25 @@ func ParseFile(r io.Reader) (Table, error) {
 				if err != nil {
 					return table, err
 				}
-				table.Metadata = append(table.Metadata, &meta)
+				table.Metadata = append(table.Metadata, meta)
 				switch meta.Class {
 				case "fileformat":
 					table.Fileformat = meta.Value
 				case "INFO":
 					if meta.ID != "" {
-						table.Info[meta.ID] = &meta
+						table.Info[meta.ID] = meta
 					}
 				case "FORMAT":
 					if meta.ID != "" {
-						table.Format[meta.ID] = &meta
+						table.Format[meta.ID] = meta
 					}
 				}
 				continue
 			}
 		}
-		r := NewRecord(&table)
+		r := NewRecord(table)
 		r.ParseRecord(line)
-		records = append(records, &r)
+		records = append(records, r)
 	}
 	table.Records = records
 	return table, nil
