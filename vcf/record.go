@@ -67,6 +67,7 @@ func ParseRecord(s string) (*Record, error) {
 }
 
 func (r *Record) parseGenotypes(fields []string) {
+
 	for _, field := range fields {
 		r.Genotypes = append(r.Genotypes, strings.Split(field, ":"))
 	}
@@ -74,7 +75,7 @@ func (r *Record) parseGenotypes(fields []string) {
 
 func (r *Record) parseInfo(s string) {
 
-	for _, field := range strings.Split(strings.TrimSpace(s), ";") {
+	for _, field := range strings.Split(s, ";") {
 		if !strings.Contains(field, "=") { // Flag field
 			r.Info[field] = field
 			continue
